@@ -1,0 +1,333 @@
+service:
+  name: serverless-todo-app
+
+plugins:
+  - serverless-webpack
+  - serverless-iam-roles-per-function
+  #- serverless-reqvalidator-plugin
+  - serverless-aws-documentation
+  - serverless-plugin-canary-deployments
+  #- serverless-es-logs
+
+
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'eu-west-1'}
+  
+  tracing:
+    lambda: true
+    apiGateway: true
+
+  environment:
+    TODOS_TABLE: 'Todos-Dev'
+    INDEX_NAME: 'todoIdIndex'
+    IS_OFFLINE: false
+    IMAGES_S3_BUCKET: serverless-todo-images-ea273hs-${self:provider.stage}
+    SIGNED_URL_EXPIRATION: 300
+custom:
+  documentation:
+    api:
+      info:
+        version: v1.0.0
+        title: Todo API
+        description: Serverless application for managing todos
+  #esLogs:
+  #  endpoint: !GetAtt TodoSearch.DomainEndpoint
+  #  index: todos
+  #  xrayTracingPermissions: true
+  #  filterPattern: ""
+
+  #iamRoleStatements:
+  #  - Effect: Allow
+  #    Action:
+  #      - codedeploy:*
+  #    Resource:
+  #      - '*'
+    #- Effect: Allow
+    #  Action:
+    #    - dynamodb:Query
+    #    - dynamodb:PutItem
+    #    - dynamodb:GetItem
+    #    - dynamodb:DeleteItem
+    #    - dynamodb:updateItem
+    #  Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+    #- Effect: Allow
+    #  Action:
+    #    - s3:PutObject
+    #    - s3:GetObject
+    #  Resource: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*
+
+functions:
+
+  Auth:
+    handler: src/lambda/auth/auth0Authorizer.handler
+
+  
+
+  # TODO: Configure this function
+  GetTodos:
+    handler: src/lambda/http/getTodos.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - dynamodb:GetItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource: 
+          - '*'
+    events:
+      - http:
+          method: get
+          path: todos
+          cors: true
+          authorizer: Auth
+
+  #Get set of todos
+  GetSetOfTodos:
+    handler: src/lambda/http/getSetOfTodos.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - dynamodb:GetItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource: 
+          - '*'
+    events:
+      - http:
+          method: get
+          path: setoftodos
+          cors: true
+          authorizer: Auth
+
+  # TODO: Configure this function
+  CreateTodo:
+    handler: src/lambda/http/createTodo.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:      
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}  
+      - Effect: Allow
+        Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource: 
+          - '*'    
+    events:
+      - http:
+          method: post
+          path: todos
+          cors: true
+          authorizer: Auth
+          request:
+            schema:
+              application/json: ${file(models/create-todo-request.json)}
+
+
+  # TODO: Configure this function
+  UpdateTodo:
+    handler: src/lambda/http/updateTodo.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:updateItem 
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource: 
+          - '*' 
+    events:
+      - http:
+          method: patch
+          path: todos/{todoId}
+          cors: true
+          authorizer: Auth
+          request:
+            schema:
+              application/json: ${file(models/update-todo-request.json)}
+  
+              # TODO: Configure this function
+  DeleteTodo:
+    handler: src/lambda/http/deleteTodo.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:deleteItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource: 
+          - '*'
+    events:
+      - http:
+          method: delete
+          path: todos/{todoId}
+          authorizer: Auth
+          cors: true
+
+  # TODO: Configure this function
+  GenerateUploadUrl:
+    handler: src/lambda/http/generateUploadUrl.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:updateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+          - s3:GetObject
+        Resource: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*
+      - Effect: Allow
+        Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource: 
+          - '*'    
+    events:
+      - http:
+          method: post
+          path: todos/{todoId}/attachment
+          authorizer: Auth
+          cors: true
+
+  #SyncWithElasticsearch:
+  #  environment:
+  #    ES_ENDPOINT: !GetAtt TodoSearch.DomainEndpoint
+  #  handler: src/lambda/dynamoDb/elasticSearchSync.handler
+  #  events:
+  #    - stream:
+  #        type: dynamodb
+  #        arn: !GetAtt ImagesDynamoDBTable.StreamArn
+
+resources:
+  Resources:
+    # TODO: Add any necessary AWS resources
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST,DELETE'"
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: ApiGatewayRestApi   
+
+    TodosTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+          - AttributeName: todoId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: todoId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.TODOS_TABLE}
+        LocalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.INDEX_NAME}
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE  
+            Projection:
+              ProjectionType: ALL # What attributes will be copied to an index
+    
+    AttachmentsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.IMAGES_S3_BUCKET}
+        CorsConfiguration:
+          CorsRules:
+            -
+              AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000   
+
+
+
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        PolicyDocument:
+          Id: MyPolicy
+          Version: "2012-10-17"
+          Statement:
+            - Sid: PublicReadForGetBucketObjects
+              Effect: Allow
+              Principal: '*'
+              Action: 's3:GetObject'
+              Resource: 'arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*'
+        Bucket: !Ref AttachmentsBucket
+
+  #  TodoSearch:
+  #    Type: AWS::Elasticsearch::Domain
+  #    Properties:
+  #      ElasticsearchVersion: '6.3'
+  #      DomainName: todo-search-${self:provider.stage}
+  #      ElasticsearchClusterConfig:
+  #        DedicatedMasterEnabled: false
+  #        InstanceCount: '1'
+  #        ZoneAwarenessEnabled: false
+  #        InstanceType: t2.small.elasticsearch
+  #      EBSOptions:
+  #        EBSEnabled: true
+  #        Iops: 0
+  #        VolumeSize: 10
+  #        VolumeType: 'gp2'
+
+  #      AccessPolicies:
+  #        Version: '2012-10-17'
+  #        Statement:
+  #          -
+  #            Effect: Allow
+  #            Principal:
+  #              AWS: '*'
+  #            Action: 'es:ESHttp*'
+  #            Resource: !Sub 'arn:aws:es:${self:provider.region}:${AWS::AccountId}:domain/todo-search-${self:provider.stage}/*'
+  #            Condition:
+  #              IpAddress:
+  #                aws:sourceIp:
+  #                  - "83.250.10.142"
+    
+    #RequestBodyValidator:
+    #  Type: AWS::ApiGateway::RequestValidator
+    #  Properties:
+    #    Name: 'request-body-validator'
+    #    RestApiId:
+    #      Ref: ApiGatewayRestApi
+    #    ValidateRequestBody: true
+    #    ValidateRequestParameters: false
