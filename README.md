@@ -277,5 +277,10 @@ Provide variables for the collection (similarly to how this was done in the cour
 3. Updated the create todo item api to include reporter name in table.
 4. Added DynamoDb pagination
 
+Screenshots for 1,3,4 can be found in the backend/screenshots folder.
+The client is NOT updated to support the new get set of todos endpoint with pagination.
+
+
+
 
 
